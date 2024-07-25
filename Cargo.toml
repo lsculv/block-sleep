@@ -1,7 +1,7 @@
 [package]
 name = "block-sleep"
 authors = ["Lucas Culverhouse <lucasculverhouse@gmail.com>"]
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 rust-version = "1.79"
 homepage = "https://github.com/lsculv/block-sleep"
