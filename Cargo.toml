@@ -1,0 +1,16 @@
+[package]
+name = "block_sleep"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "block-sleep"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1.0.86"
+clap = { version = "4.5.4", features = ["derive"] }
+colored = "2.1.0"
+dbus = "0.9.7"
+libc = "0.2.155"
+sysinfo = "0.30.12"
