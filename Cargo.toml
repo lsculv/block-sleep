@@ -15,9 +15,9 @@ description = "Block your system from sleeping for an amount of time, or until a
 anyhow = "1.0.86"
 clap = { version = "4.5.4", features = ["derive"] }
 colored = "2.1.0"
-dbus = "0.9.7"
 libc = "0.2.155"
 sysinfo = "0.30.12"
+zbus = "4.4.0"
 
 [profile.release]
 opt-level = "s"

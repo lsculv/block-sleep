@@ -1,23 +1,28 @@
-use std::time::Duration;
+use std::ops::BitOr;
 
 use anyhow::anyhow;
-use dbus::{
-    blocking::{BlockingSender, Connection},
-    message::Message,
-    strings::{BusName, Interface, Member},
-    Path,
-};
-
-use crate::anyhow_map;
+use zbus::blocking::{Connection, Proxy};
 
 /// Bit flags that are used in the DBus API
-#[allow(nonstandard_style)]
-pub mod InhibitFlags {
-    pub const LogOut: u32 = 1;
-    pub const SwitchUser: u32 = 2;
-    pub const Suspend: u32 = 4;
-    pub const Idle: u32 = 8;
-    pub const AutoMount: u32 = 16;
+#[repr(u32)]
+#[derive(Clone, Copy, Debug)]
+pub enum InhibitFlags {
+    LogOut = 1,
+    SwitchUser = 2,
+    Suspend = 4,
+    Idle = 8,
+    AutoMount = 16,
+}
+
+impl BitOr for InhibitFlags {
+    type Output = u32;
+
+    fn bitor(self, rhs: Self) -> Self::Output {
+        // SAFETY: `InhibitFlags` is `repr(u32)` so this conversion is always valid
+        let lhs: u32 = unsafe { std::mem::transmute(self) };
+        let rhs: u32 = unsafe { std::mem::transmute(rhs) };
+        lhs | rhs
+    }
 }
 
 /// Guard that will keep sleep inhibited until it is dropped
@@ -32,19 +37,25 @@ impl GnomeInhibitGuard {
 }
 
 pub fn inhibit_sleep() -> anyhow::Result<GnomeInhibitGuard> {
-    let conn = Connection::new_session()?;
-    let bus = BusName::new("org.gnome.SessionManager").map_err(anyhow_map)?;
-    let path = Path::new("/org/gnome/SessionManager").map_err(anyhow_map)?;
-    let iface = Interface::new("org.gnome.SessionManager").map_err(anyhow_map)?;
-    let method = Member::new("Inhibit").map_err(anyhow_map)?;
+    let conn = Connection::session()?;
+
+    let destination = "org.gnome.SessionManager";
+    let path = "/org/gnome/SessionManager";
+    let interface = "org.gnome.SessionManager";
+
+    let proxy = Proxy::new(&conn, destination, path, interface)?;
     let flags = InhibitFlags::Suspend | InhibitFlags::Idle;
-    // Arguments to the `Inhibit` method. the second argument `0u32` is supposed to be the X window
-    // identifier of the blocking program, but it is set to zero here as there should never be an X
-    // window associated with our program.
+    // Args are: in  -> `App ID`, `X Window ID`, `Reason`, `Inhibit Flags`
+    //           out -> `Inhibit Cookie`
     let args = ("block-sleep", 0u32, "Sleep block manually requested", flags);
-    let msg = Message::call_with_args(bus, path, iface, method, args);
-    let _ = conn
-        .send_with_reply_and_block(msg, Duration::from_secs(3))
-        .map_err(|e| anyhow!(e))?;
+
+    let result = proxy.call::<&str, (&str, u32, &str, u32), u32>("Inhibit", &args);
+    if let Err(e) = result {
+        return Err(anyhow!(
+            "Failed to block sleep using the Gnome session manager: {}",
+            e
+        ));
+    }
+
     Ok(GnomeInhibitGuard::new(conn))
 }

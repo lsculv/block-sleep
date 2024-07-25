@@ -168,10 +168,6 @@ fn run(args: Args) -> anyhow::Result<()> {
     }
 }
 
-fn anyhow_map(e: String) -> anyhow::Error {
-    anyhow!(e)
-}
-
 fn block_sleep_for_time(time: Duration, backend: Backend) -> anyhow::Result<()> {
     match backend {
         Backend::Gnome => {
