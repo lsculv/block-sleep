@@ -1,11 +1,15 @@
 [package]
-name = "block_sleep"
+name = "block-sleep"
+authors = ["Lucas Culverhouse <lucasculverhouse@gmail.com>"]
 version = "0.1.0"
 edition = "2021"
-
-[[bin]]
-name = "block-sleep"
-path = "src/main.rs"
+rust-version = "1.79"
+homepage = "https://github.com/lsculv/block-sleep"
+repository = "https://github.com/lsculv/block-sleep"
+license = "MIT"
+readme = "README.md"
+categories = ["command-line-utilities"]
+description = "Block your system from sleeping for an amount of time, or until a certain process exits"
 
 [dependencies]
 anyhow = "1.0.86"
@@ -14,3 +18,8 @@ colored = "2.1.0"
 dbus = "0.9.7"
 libc = "0.2.155"
 sysinfo = "0.30.12"
+
+[profile.release]
+opt-level = "s"
+strip = true
+lto = true
