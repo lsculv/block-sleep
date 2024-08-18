@@ -1,7 +1,7 @@
 use anyhow::{anyhow, bail};
 use clap::Parser;
 use colored::Colorize;
-use std::{env, io::Error, process, sync::mpsc, thread, time::Duration};
+use std::{env, fs, io::Error, process, sync::mpsc, thread, time::Duration};
 
 pub mod gnome;
 
@@ -92,23 +92,16 @@ impl Backend {
             Ok(Backend::MacOS)
         } else if cfg!(target_os = "linux") {
             // Ensure that systemd is being used and run as pid 1
-            if let Ok(pid1_command) = process::Command::new("ps")
-                .args(["-q", "1", "-o", "comm="])
-                .output()
-            {
-                let is_systemd = pid1_command
-                    .stdout
-                    .windows(b"systemd".len())
-                    .any(|w| w == b"systemd");
-                if !is_systemd {
-                    bail!(
-                        "Only Linux systems using systemd are supported, found \"{name}\"",
-                        name = String::from_utf8_lossy(&pid1_command.stdout)
-                    );
-                }
-            } else {
+            let Ok(pid1_name) = fs::read("/proc/1/comm") else {
                 // This probably should not happen
-                bail!("could not ensure the system is using systemd, only Linux systems using systemd are supported");
+                bail!("Could not ensure the system is using systemd, only Linux systems using systemd are supported");
+            };
+
+            if !pid1_name.windows(b"systemd".len()).any(|w| w == b"systemd") {
+                bail!(
+                    "Only Linux systems using systemd are supported, found \"{name}\"",
+                    name = String::from_utf8_lossy(&pid1_name)
+                );
             }
 
             // Checking if Gnome is being used or not
