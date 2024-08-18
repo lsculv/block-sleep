@@ -1,10 +1,11 @@
-use anyhow::anyhow;
+use anyhow::{anyhow, bail};
 use clap::Parser;
 use colored::Colorize;
 use std::{env, io::Error, process, sync::mpsc, thread, time::Duration};
-use sysinfo::{Pid, ProcessRefreshKind, RefreshKind, System};
 
 pub mod gnome;
+
+type Pid = u32;
 
 fn main() {
     if let Err(e) = run(Args::parse()) {
@@ -41,7 +42,7 @@ fn parse_duration(s: &str) -> anyhow::Result<Duration> {
         c @ Some('m') => (60.0, c),
         c @ Some('s') => (1.0, c),
         // clap *should* prevent this branch from ever happening
-        None => return Err(anyhow!("TIME value was empty")),
+        None => bail!("TIME value was empty"),
         _ => (1.0, None),
     };
     let secs = if let Some(c) = strip_char {
@@ -58,7 +59,7 @@ fn parse_duration(s: &str) -> anyhow::Result<Duration> {
         })? * secs_in_unit
     };
     if secs < 0.0 {
-        return Err(anyhow!("TIME value cannot be negative."));
+        bail!("TIME value cannot be negative.");
     }
     Ok(Duration::from_secs_f64(secs))
 }
@@ -87,25 +88,28 @@ enum Backend {
 impl Backend {
     /// Tries to get the sleep inhibiting back end from the system.
     pub fn from_system() -> anyhow::Result<Self> {
-        let system = System::new_with_specifics(
-            RefreshKind::new().with_processes(ProcessRefreshKind::everything()),
-        );
         if cfg!(target_os = "macos") {
             Ok(Backend::MacOS)
         } else if cfg!(target_os = "linux") {
-            if let Some(pid1) = system.process(Pid::from(1)) {
-                let pid1_name = pid1.name();
-                if pid1_name.trim() != "systemd" {
-                    return Err(anyhow!(
-                        "Only Linux systems using systemd are supported, found \"{pid1_name}\""
-                    ));
+            // Ensure that systemd is being used and run as pid 1
+            if let Ok(pid1_command) = process::Command::new("ps")
+                .args(["-q", "1", "-o", "comm="])
+                .output()
+            {
+                let is_systemd = pid1_command
+                    .stdout
+                    .windows(b"systemd".len())
+                    .any(|w| w == b"systemd");
+                if !is_systemd {
+                    bail!(
+                        "Only Linux systems using systemd are supported, found \"{name}\"",
+                        name = String::from_utf8_lossy(&pid1_command.stdout)
+                    );
                 }
             } else {
                 // This probably should not happen
-                return Err(anyhow!("could not ensure the system is using systemd, only Linux systems using systemd are supported"));
+                bail!("could not ensure the system is using systemd, only Linux systems using systemd are supported");
             }
-            // Ensure that systemd is being used and run as pid 1
-            //let pid1_name = fs::read_to_string("/proc/1/comm").unwrap_or("unknown".to_string());
 
             // Checking if Gnome is being used or not
             let xdg_desktop = env::var("XDG_CURRENT_DESKTOP");
@@ -136,7 +140,7 @@ impl Backend {
             };
             return Ok(backend);
         } else {
-            return Err(anyhow!("Only Linux and MacOS are supported"));
+            bail!("Only Linux and MacOS are supported");
         }
     }
 }
@@ -147,8 +151,8 @@ pub trait IsRunning {
 
 impl IsRunning for Pid {
     fn is_running(&self) -> bool {
-        // SAFETY: This use of FFI is safe.
-        let proc_alive = unsafe { libc::kill(self.as_u32() as i32, 0) };
+        // SAFETY: `kill` is safe to use here as we aren't sending a *real* signal
+        let proc_alive = unsafe { libc::kill(*self as i32, 0) };
         !(proc_alive != 0 && Error::last_os_error().raw_os_error().unwrap() != libc::EPERM)
     }
 }
@@ -184,7 +188,7 @@ fn block_sleep_on_pid(pid: Pid, time: Option<Duration>, backend: Backend) -> any
     // First check that the pid is actually running before doing any blocking to produce a better
     // error message.
     if !pid.is_running() {
-        return Err(anyhow!("No such process with pid {pid} was running"));
+        bail!("No such process with pid {pid} was running");
     }
     match backend {
         Backend::Gnome => {
@@ -221,7 +225,7 @@ fn block_sleep_on_first_pid(
     // Check that all the pids supplied are actually running
     for pid in pids {
         if !pid.is_running() {
-            return Err(anyhow!("No such process with pid {pid} was running"));
+            bail!("No such process with pid {pid} was running");
         }
     }
     match backend {
@@ -285,11 +289,7 @@ fn block_sleep_on_all_pids(
                     println!("Timeout reached before all process could exit.");
                     break;
                 }
-                let any_running = pids
-                    .iter()
-                    .map(|pid| pid.is_running())
-                    .any(|running| running);
-                if !any_running {
+                if !pids.iter().any(|pid| pid.is_running()) {
                     break;
                 }
                 thread::sleep(Duration::from_secs(1));
